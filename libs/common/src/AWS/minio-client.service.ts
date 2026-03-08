@@ -1,7 +1,7 @@
 import { Injectable, OnApplicationBootstrap, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as Minio from 'minio';
-import stream from 'stream';
+import * as stream from 'stream';
 
 
 @Injectable()

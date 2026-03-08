@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as http from 'http';
+import * as https from 'https';
+import * as os from 'os';
+import * as path from 'path';
 import { ISbomEngine, SbomFormat, SbomScanOptions, SbomScanResult, SbomTargetType } from '../interfaces/sbom-engine.interface';
 
 @Injectable()
@@ -16,8 +21,26 @@ export class SyftEngine implements ISbomEngine {
 
   async generateReport(options: SbomScanOptions): Promise<SbomScanResult> {
     const format = options.format ?? SbomFormat.CYCLONEDX_JSON;
-    const syftTarget = this.buildSyftTarget(options.targetType, options.target);
 
+    if (/^https?:\/\//i.test(options.target)) {
+      this.logger.log(`[${options.scanId}] URL target detected, downloading to temp file: ${options.target}`);
+      const tmpPath = await this.downloadToTemp(options.target, options.scanId);
+      try {
+        const syftTarget = `file:${tmpPath}`;
+        this.logger.log(`[${options.scanId}] Starting Syft scan on temp file: ${syftTarget}`);
+        const raw = await (this.useDocker
+          ? this.runWithDocker(syftTarget, format, options.scanId)
+          : this.runBinary(syftTarget, format, options.scanId));
+        this.logger.log(`[${options.scanId}] Syft scan completed, output size=${raw.length}`);
+        return { raw, format };
+      } finally {
+        fs.unlink(tmpPath, (err) => {
+          if (err) this.logger.warn(`[${options.scanId}] Failed to delete temp file ${tmpPath}: ${err.message}`);
+        });
+      }
+    }
+
+    const syftTarget = this.buildSyftTarget(options.targetType, options.target);
     this.logger.log(`[${options.scanId}] Starting Syft scan: target=${syftTarget}, format=${format}`);
 
     const raw = await (this.useDocker
@@ -26,6 +49,37 @@ export class SyftEngine implements ISbomEngine {
 
     this.logger.log(`[${options.scanId}] Syft scan completed, output size=${raw.length}`);
     return { raw, format };
+  }
+
+  /** Downloads a URL to a temporary file and returns its path. */
+  private downloadToTemp(url: string, scanId: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const ext = path.extname(new URL(url).pathname) || '';
+      const tmpPath = path.join(os.tmpdir(), `syft-${scanId}${ext}`);
+      const file = fs.createWriteStream(tmpPath);
+
+      const get = url.startsWith('https') ? https.get : http.get;
+      get(url, (res) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          res.resume();
+          file.destroy();
+          fs.unlink(tmpPath, () => {});
+          return reject(new Error(`HTTP ${res.statusCode} fetching URL: ${url}`));
+        }
+        res.pipe(file);
+        file.on('finish', () => file.close(() => {
+          this.logger.debug(`[${scanId}] Downloaded to temp file: ${tmpPath}`);
+          resolve(tmpPath);
+        }));
+        file.on('error', (err) => {
+          fs.unlink(tmpPath, () => {});
+          reject(err);
+        });
+      }).on('error', (err) => {
+        fs.unlink(tmpPath, () => {});
+        reject(err);
+      });
+    });
   }
 
   private buildSyftTarget(type: SbomTargetType, target: string): string {
@@ -75,10 +129,11 @@ export class SyftEngine implements ISbomEngine {
 
   private runWithDocker(target: string, format: SbomFormat, scanId: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      // Mount the Docker socket so syft inside can reach the host daemon
+      const tmpDir = os.tmpdir();
       const args = [
         'run', '--rm',
         '-v', '/var/run/docker.sock:/var/run/docker.sock',
+        '-v', `${tmpDir}:${tmpDir}:ro`,
         `anchore/syft:${this.syftVersion}`,
         target,
         '-o', format,
