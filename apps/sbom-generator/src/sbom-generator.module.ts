@@ -1,0 +1,41 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { LoggerModule } from '@app/common/logger/logger.module';
+import { ApmModule } from '@app/common/apm/apm.module';
+import { ScanModule } from './modules/scan/scan.module';
+import { SbomScanJobEntity } from './modules/scan/scan.entity';
+import { AddSbomScanJobs1741420000000 } from './modules/scan/migration/1741420000000-AddSbomScanJobs';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    LoggerModule.forRoot({
+      httpCls: false,
+      jsonLogger: process.env.LOGGER_FORMAT === 'JSON',
+      name: 'SbomGenerator',
+    }),
+    ApmModule,
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (config: ConfigService) => {
+        const region = config.get('REGION') ? `_${config.get('REGION')}` : '';
+        return {
+          type: 'postgres',
+          host: config.get('POSTGRES_HOST') ?? 'localhost',
+          port: Number(config.get('POSTGRES_PORT') ?? 5432),
+          database: `${config.get('POSTGRES_DB') ?? 'get_app'}${region}`,
+          username: config.get('POSTGRES_USER') ?? 'postgres',
+          password: config.get('POSTGRES_PASSWORD'),
+          entities: [SbomScanJobEntity],
+          migrations: [AddSbomScanJobs1741420000000],
+          migrationsRun: config.get('MIGRATION_RUN') !== 'false',
+          synchronize: false,
+        };
+      },
+      inject: [ConfigService],
+    }),
+    ScanModule,
+  ],
+})
+export class SbomGeneratorModule {}

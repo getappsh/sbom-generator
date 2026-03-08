@@ -1,0 +1,58 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SbomFormat, SbomTargetType } from '../interfaces/sbom-engine.interface';
+import { ScanStatus, SbomScanJobEntity } from '../scan.entity';
+
+export class ScanStatusDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ enum: ScanStatus })
+  status: ScanStatus;
+
+  @ApiProperty()
+  target: string;
+
+  @ApiProperty({ enum: SbomTargetType })
+  targetType: SbomTargetType;
+
+  @ApiProperty({ enum: SbomFormat })
+  format: SbomFormat;
+
+  @ApiPropertyOptional()
+  triggeredBy?: string;
+
+  @ApiPropertyOptional()
+  error?: string;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+
+  @ApiPropertyOptional()
+  completedAt?: Date;
+
+  static fromEntity(entity: SbomScanJobEntity): ScanStatusDto {
+    const dto = new ScanStatusDto();
+    dto.id = entity.id;
+    dto.status = entity.status;
+    dto.target = entity.target;
+    dto.targetType = entity.targetType;
+    dto.format = entity.format;
+    dto.triggeredBy = entity.triggeredBy;
+    dto.error = entity.error;
+    dto.createdAt = entity.createdAt;
+    dto.updatedAt = entity.updatedAt;
+    dto.completedAt = entity.completedAt;
+    return dto;
+  }
+}
+
+export class ScanQueuedDto {
+  @ApiProperty()
+  scanId: string;
+
+  @ApiProperty({ enum: ScanStatus })
+  status: ScanStatus;
+}
