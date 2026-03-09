@@ -20,8 +20,6 @@ export function getKafkaClientConfig(options: MicroserviceModuleOptions): Client
       return kafkaGetMapConfig(options.id)
     case MicroserviceType.DEVICE:
       return kafkaDeviceConfig(options.id)
-    case MicroserviceType.SBOM_GENERATOR:
-      return kafkaSbomGeneratorConfig(options.id)
   }
 }
 
@@ -154,8 +152,7 @@ const kafkaGetMapConfig = (id?: string): ClientProvider => {
 }
 
 export const KAFKA_MAP_DEVICE_CLIENT_ID="getapp-map-device"
-export const KAFKA_MAP_DEVICE_GROUP_ID="getapp-map-device-consumer.cancel"
-
+export const KAFKA_MAP_DEVICE_GROUP_ID="getapp-map-device-consumer.cancel"       
 const kafkaDeviceConfig = (id?: string): ClientProvider => {
   const idStr = id ? `-${id}` : '';
   return {
@@ -170,24 +167,4 @@ const kafkaDeviceConfig = (id?: string): ClientProvider => {
         }
     }
   }
-}
-
-export const KAFKA_SBOM_GENERATOR_CLIENT_ID = "getapp-sbom-generator"
-export const KAFKA_SBOM_GENERATOR_GROUP_ID = "getapp-sbom-generator-consumer"
-
-const kafkaSbomGeneratorConfig = (id?: string): ClientProvider => {
-  const idStr = id ? `-${id}` : '';
-  return {
-    transport: Transport.KAFKA,
-    options: {
-      client: getKafkaConnection(KAFKA_SBOM_GENERATOR_CLIENT_ID),
-      consumer: {
-        groupId: `${KAFKA_SBOM_GENERATOR_GROUP_ID}${idStr}`
-      },
-      run: {
-        partitionsConsumedConcurrently: Number(process.env.CONSUME_CONCURRENT ?? 100)
-      }
-    }
-  }
-
 }

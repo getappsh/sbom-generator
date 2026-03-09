@@ -20,8 +20,6 @@ export function getSocketClientConfig(type: MicroserviceType): ClientProvider {
     case MicroserviceType.DEVICE:
       // For device using discovery microservice
       return socketDiscoveryConfig()
-    case MicroserviceType.SBOM_GENERATOR:
-      return socketSbomGeneratorConfig()
   }
 }
 
@@ -101,12 +99,3 @@ const socketGetMapConfig = (): ClientProvider => {
 //     options: {port: 3008}
 //   }
 // }
-const socketSbomGeneratorConfig = (): ClientProvider => {
-  return {
-    transport: Transport.TCP,
-    options: {
-      host: process.env.SBOM_GENERATOR_HOST ?? "localhost",
-      port: Number(process.env.SBOM_GENERATOR_PORT ?? 3009)
-    }
-  }
-}

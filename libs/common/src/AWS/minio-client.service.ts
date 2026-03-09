@@ -1,7 +1,7 @@
 import { Injectable, OnApplicationBootstrap, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as Minio from 'minio';
-import * as stream from 'stream';
+import stream from 'stream';
 
 
 @Injectable()
@@ -46,7 +46,7 @@ export class MinioClientService implements OnModuleInit{
 
   deleteObjects(bucketName: string, objectsKey: string[] | string): Promise<void> {
     const objects = Array.isArray(objectsKey) ? objectsKey : [objectsKey];
-    return this.client.removeObjects(bucketName, objects).then(() => {});
+    return this.client.removeObjects(bucketName, objects);
   }
 
   generatePresignedDownloadUrl(bucketName: string, objectKey: string, expression?: number): Promise<string> {
@@ -55,17 +55,6 @@ export class MinioClientService implements OnModuleInit{
 
   getObject(bucketName: string, objectKey: string): Promise<stream.Readable> {
     return this.client.getObject(bucketName, objectKey);    
-  }
-
-  putBuffer(bucketName: string, objectKey: string, data: Buffer): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const readable = new stream.PassThrough();
-      readable.end(data);
-      this.client.putObject(bucketName, objectKey, readable, data.length, (err) => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
   }
   
   async getObjectStat(bucketName: string, objectKey: string): Promise<Minio.BucketItemStat | undefined> {
