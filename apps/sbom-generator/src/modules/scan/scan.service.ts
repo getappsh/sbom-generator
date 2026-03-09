@@ -4,8 +4,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Subject } from 'rxjs';
+import * as fs from 'fs';
 import * as http from 'http';
 import * as https from 'https';
+import * as os from 'os';
+import * as path from 'path';
 import { MinioClientService } from '@app/common/AWS/minio-client.service';
 import { SbomScanOptions, SBOM_ENGINE, ISbomEngine, SbomFormat, SbomTargetType } from './interfaces/sbom-engine.interface';
 import { SbomScanJobEntity, ScanStatus } from './scan.entity';
@@ -153,29 +156,16 @@ export class ScanService implements OnModuleDestroy {
     entity.status = ScanStatus.RUNNING;
     await this.scanRepo.save(entity);
 
+    let tmpPath: string | undefined;
     try {
-      // Check artifact size before fetching when target is a URL
-      if (this.maxArtifactSizeBytes > 0 && /^https?:\/\//i.test(entity.target)) {
-        const contentLength = await this.fetchContentLength(entity.target);
-        if (contentLength !== null && contentLength > this.maxArtifactSizeBytes) {
-          const fileMB = (contentLength / (1024 * 1024)).toFixed(2);
-          const limitMB = (this.maxArtifactSizeBytes / (1024 * 1024)).toFixed(2);
-          const failureReason =
-            `File size is ${contentLength} bytes (${fileMB} MB), which exceeds the configured limit of ${this.maxArtifactSizeBytes} bytes (${limitMB} MB)`;
-          this.logger.warn(`[${scanId}] ${failureReason}`);
-          entity.status = ScanStatus.FAILED;
-          entity.failureReason = failureReason;
-          entity.completedAt = new Date();
-          await this.scanRepo.save(entity);
-          this.notifySubscribers(scanId, { scanId, status: ScanStatus.FAILED, error: failureReason });
-          return;
-        }
+      if (/^https?:\/\//i.test(entity.target)) {
+        tmpPath = await this.downloadToTemp(entity.target, scanId);
       }
 
       const options: SbomScanOptions = {
         scanId,
-        target: entity.target,
-        targetType: entity.targetType,
+        target: tmpPath ?? entity.target,
+        targetType: tmpPath ? SbomTargetType.FILE : entity.targetType,
         format: entity.format,
       };
 
@@ -205,6 +195,12 @@ export class ScanService implements OnModuleDestroy {
       await this.scanRepo.save(entity);
 
       this.notifySubscribers(scanId, { scanId, status: ScanStatus.FAILED, error: errorMessage });
+    } finally {
+      if (tmpPath) {
+        fs.unlink(tmpPath, (err) => {
+          if (err) this.logger.warn(`[${scanId}] Failed to delete temp file ${tmpPath}: ${err.message}`);
+        });
+      }
     }
   }
 
@@ -250,18 +246,51 @@ export class ScanService implements OnModuleDestroy {
     return entity;
   }
 
-  /** Issues a HEAD request to resolve Content-Length without downloading the body.
-   *  Returns the byte count, or null if the server did not include the header. */
-  private fetchContentLength(url: string): Promise<number | null> {
-    return new Promise((resolve) => {
-      const get = url.startsWith('https') ? https.request : http.request;
-      const req = get(url, { method: 'HEAD' }, (res) => {
-        res.resume();
-        const header = res.headers['content-length'];
-        resolve(header ? parseInt(header, 10) : null);
+  private downloadToTemp(url: string, scanId: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const ext = path.extname(new URL(url).pathname) || '';
+      const tmpPath = path.join(os.tmpdir(), `sbom-${scanId}${ext}`);
+      const file = fs.createWriteStream(tmpPath);
+
+      const get = url.startsWith('https') ? https.get : http.get;
+      get(url, (res) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          res.resume();
+          file.destroy();
+          fs.unlink(tmpPath, () => {});
+          return reject(new Error(`HTTP ${res.statusCode} fetching URL: ${url}`));
+        }
+
+        if (this.maxArtifactSizeBytes > 0) {
+          const contentLengthHeader = res.headers['content-length'];
+          if (contentLengthHeader) {
+            const contentLength = parseInt(contentLengthHeader, 10);
+            if (contentLength > this.maxArtifactSizeBytes) {
+              const fileMB = (contentLength / (1024 * 1024)).toFixed(2);
+              const limitMB = (this.maxArtifactSizeBytes / (1024 * 1024)).toFixed(2);
+              res.resume();
+              file.destroy();
+              fs.unlink(tmpPath, () => {});
+              return reject(new Error(
+                `File size is ${contentLength} bytes (${fileMB} MB), which exceeds the configured limit of ${this.maxArtifactSizeBytes} bytes (${limitMB} MB)`,
+              ));
+            }
+          }
+        }
+
+        res.pipe(file);
+        file.on('finish', () => file.close(() => {
+          this.logger.debug(`[${scanId}] Downloaded to temp file: ${tmpPath}`);
+          resolve(tmpPath);
+        }));
+        file.on('error', (err) => {
+          fs.unlink(tmpPath, () => {});
+          reject(err);
+        });
+      }).on('error', (err) => {
+        fs.unlink(tmpPath, () => {});
+        reject(err);
       });
-      req.on('error', () => resolve(null));
-      req.end();
     });
   }
 }
