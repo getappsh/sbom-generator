@@ -61,8 +61,17 @@ export class ScanService implements OnModuleDestroy {
   }
 
   async queueScanForUploadedFile(event: ScanFileUploadedEventDto): Promise<void> {
+    // If a full URL is provided, use it directly. Otherwise generate a presigned
+    // URL so the engine can download the file from MinIO (objectKey alone is not
+    // a valid local filesystem path).
+    let target = event.objectKey;
+    if (!/^https?:\/\//i.test(target)) {
+      const bucket = event.bucketName ?? this.bucketName;
+      target = await this.minioClient.generatePresignedDownloadUrl(bucket, target);
+    }
+
     const dto: CreateScanDto = {
-      target: event.objectKey,
+      target,
       targetType: SbomTargetType.FILE,
       format: event.format ?? SbomFormat.CYCLONEDX_JSON,
       triggeredBy: event.triggeredBy ?? 'upload-service',
