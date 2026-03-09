@@ -32,6 +32,9 @@ export class SbomScanJobEntity {
   error: string;
 
   @Column({ nullable: true })
+  failureReason: string;
+
+  @Column({ nullable: true })
   triggeredBy: string;
 
   @CreateDateColumn()

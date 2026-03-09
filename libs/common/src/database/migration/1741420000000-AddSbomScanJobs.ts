@@ -22,6 +22,7 @@ export class AddSbomScanJobs1741420000000 implements MigrationInterface {
         "format"        "public"."sbom_scan_jobs_format_enum" NOT NULL DEFAULT 'cyclonedx-json',
         "minioKey"      character varying,
         "error"         text,
+        "failureReason" character varying,
         "triggeredBy"   character varying,
         "createdAt"     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
         "updatedAt"     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),

@@ -24,6 +24,9 @@ export class ScanStatusDto {
   @ApiPropertyOptional()
   error?: string;
 
+  @ApiPropertyOptional()
+  failureReason?: string;
+
   @ApiProperty()
   createdAt: Date;
 
@@ -42,6 +45,7 @@ export class ScanStatusDto {
     dto.format = entity.format;
     dto.triggeredBy = entity.triggeredBy;
     dto.error = entity.error;
+    dto.failureReason = entity.failureReason;
     dto.createdAt = entity.createdAt;
     dto.updatedAt = entity.updatedAt;
     dto.completedAt = entity.completedAt;

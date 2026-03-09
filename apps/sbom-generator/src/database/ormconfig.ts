@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { SbomScanJobEntity } from '../modules/scan/scan.entity';
-import { AddSbomScanJobs1741420000000 } from '../modules/scan/migration/1741420000000-AddSbomScanJobs';
+import { AddSbomScanJobs1741420000000 } from '@app/common/database/migration/1741420000000-AddSbomScanJobs';
 
 const region = process.env.REGION ? `_${process.env.REGION}` : '';
 let migrationsRun = true;

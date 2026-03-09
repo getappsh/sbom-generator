@@ -4,6 +4,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Subject } from 'rxjs';
+import * as http from 'http';
+import * as https from 'https';
 import { MinioClientService } from '@app/common/AWS/minio-client.service';
 import { SbomScanOptions, SBOM_ENGINE, ISbomEngine, SbomFormat, SbomTargetType } from './interfaces/sbom-engine.interface';
 import { SbomScanJobEntity, ScanStatus } from './scan.entity';
@@ -21,6 +23,7 @@ export class ScanService implements OnModuleDestroy {
   private readonly logger = new Logger(ScanService.name);
   private readonly bucketName: string;
   private readonly maxConcurrent: number;
+  private readonly maxArtifactSizeBytes: number;
 
   /** Active running scan count */
   private running = 0;
@@ -37,6 +40,7 @@ export class ScanService implements OnModuleDestroy {
   ) {
     this.bucketName = configService.get('BUCKET_NAME');
     this.maxConcurrent = Number(configService.get('SCAN_MAX_CONCURRENT') ?? 3);
+    this.maxArtifactSizeBytes = Number(configService.get('SBOM_MAX_ARTIFACT_SIZE_BYTES') ?? 0);
   }
 
   onModuleDestroy() {
@@ -150,6 +154,24 @@ export class ScanService implements OnModuleDestroy {
     await this.scanRepo.save(entity);
 
     try {
+      // Check artifact size before fetching when target is a URL
+      if (this.maxArtifactSizeBytes > 0 && /^https?:\/\//i.test(entity.target)) {
+        const contentLength = await this.fetchContentLength(entity.target);
+        if (contentLength !== null && contentLength > this.maxArtifactSizeBytes) {
+          const fileMB = (contentLength / (1024 * 1024)).toFixed(2);
+          const limitMB = (this.maxArtifactSizeBytes / (1024 * 1024)).toFixed(2);
+          const failureReason =
+            `File size is ${contentLength} bytes (${fileMB} MB), which exceeds the configured limit of ${this.maxArtifactSizeBytes} bytes (${limitMB} MB)`;
+          this.logger.warn(`[${scanId}] ${failureReason}`);
+          entity.status = ScanStatus.FAILED;
+          entity.failureReason = failureReason;
+          entity.completedAt = new Date();
+          await this.scanRepo.save(entity);
+          this.notifySubscribers(scanId, { scanId, status: ScanStatus.FAILED, error: failureReason });
+          return;
+        }
+      }
+
       const options: SbomScanOptions = {
         scanId,
         target: entity.target,
@@ -178,6 +200,7 @@ export class ScanService implements OnModuleDestroy {
 
       entity.status = ScanStatus.FAILED;
       entity.error = errorMessage;
+      entity.failureReason = errorMessage;
       entity.completedAt = new Date();
       await this.scanRepo.save(entity);
 
@@ -225,5 +248,20 @@ export class ScanService implements OnModuleDestroy {
       throw new Error(`Scan job not found: ${scanId}`);
     }
     return entity;
+  }
+
+  /** Issues a HEAD request to resolve Content-Length without downloading the body.
+   *  Returns the byte count, or null if the server did not include the header. */
+  private fetchContentLength(url: string): Promise<number | null> {
+    return new Promise((resolve) => {
+      const get = url.startsWith('https') ? https.request : http.request;
+      const req = get(url, { method: 'HEAD' }, (res) => {
+        res.resume();
+        const header = res.headers['content-length'];
+        resolve(header ? parseInt(header, 10) : null);
+      });
+      req.on('error', () => resolve(null));
+      req.end();
+    });
   }
 }
