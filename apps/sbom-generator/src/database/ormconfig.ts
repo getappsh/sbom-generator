@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { SbomScanJobEntity } from '../modules/scan/scan.entity';
-import { AddSbomScanJobs1741420000000 } from '@app/common/database/migration/1741420000000-AddSbomScanJobs';
+import { AddSbomScanJobs1773014400001 } from '@app/common/database/migration/1773014400001-AddSbomScanJobs';
 
 const region = process.env.REGION ? `_${process.env.REGION}` : '';
 let migrationsRun = true;
@@ -17,7 +17,7 @@ const ormConfig = new DataSource({
   username: process.env.POSTGRES_USER ?? 'postgres',
   password: process.env.POSTGRES_PASSWORD,
   entities: [SbomScanJobEntity],
-  migrations: [AddSbomScanJobs1741420000000],
+  migrations: [AddSbomScanJobs1773014400001],
   migrationsRun,
   synchronize: false,
 });

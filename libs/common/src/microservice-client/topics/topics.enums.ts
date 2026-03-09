@@ -298,3 +298,15 @@ export const DeviceBugReportTopics = {
     NEW_BUG_REPORT: `getapp-device.bug-report.new${region}`,
     GET_BUG_REPORT: `getapp-device.bug-report.get${region}`,
 } as const
+
+export const SbomTopics = {
+    SCAN_REQUEST: `getapp-sbom-generator.scan.request${region}`,
+    GET_SCAN_STATUS: `getapp-sbom-generator.scan.status${region}`,
+    GET_SCAN_RESULT: `getapp-sbom-generator.scan.result${region}`,
+    GET_SCANS: `getapp-sbom-generator.scan.list${region}`,
+    CHECK_HEALTH: `getapp-sbom-generator.check-health${region}`,
+} as const
+
+export const SbomTopicsEmit = {
+    SCAN_FILE: `getapp-sbom-generator.scan.file${region}`,
+} as const

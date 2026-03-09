@@ -46,7 +46,11 @@ export class MinioClientService implements OnModuleInit{
 
   deleteObjects(bucketName: string, objectsKey: string[] | string): Promise<void> {
     const objects = Array.isArray(objectsKey) ? objectsKey : [objectsKey];
-    return this.client.removeObjects(bucketName, objects);
+    return this.client.removeObjects(bucketName, objects).then(() => undefined);
+  }
+
+  putBuffer(bucketName: string, key: string, data: Buffer): Promise<void> {
+    return this.client.putObject(bucketName, key, data).then(() => undefined);
   }
 
   generatePresignedDownloadUrl(bucketName: string, objectKey: string, expression?: number): Promise<string> {

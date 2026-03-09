@@ -38,7 +38,7 @@ export class ScanService implements OnModuleDestroy {
     private readonly minioClient: MinioClientService,
     private readonly configService: ConfigService,
   ) {
-    this.bucketName = configService.get('BUCKET_NAME');
+    this.bucketName = configService.get('BUCKET_NAME') ?? '';
     this.maxConcurrent = Number(configService.get('SCAN_MAX_CONCURRENT') ?? 3);
     this.maxArtifactSizeBytes = Number(configService.get('SBOM_MAX_ARTIFACT_SIZE_BYTES') ?? 0);
   }
