@@ -1,17 +1,26 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddSbomScanJobs1741420000000 implements MigrationInterface {
-  name = 'AddSbomScanJobs1741420000000';
+export class AddSbomScanJobs1773014400001 implements MigrationInterface {
+  name = 'AddSbomScanJobs1773014400001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TYPE "public"."sbom_scan_jobs_status_enum" AS ENUM ('queued', 'running', 'complete', 'failed')
+      DO $$ BEGIN
+        CREATE TYPE "public"."sbom_scan_jobs_status_enum" AS ENUM ('queued', 'running', 'complete', 'failed');
+      EXCEPTION WHEN duplicate_object THEN null;
+      END $$;
     `);
     await queryRunner.query(`
-      CREATE TYPE "public"."sbom_scan_jobs_targettype_enum" AS ENUM ('docker', 'registry', 'file', 'dir', 'oci-archive')
+      DO $$ BEGIN
+        CREATE TYPE "public"."sbom_scan_jobs_targettype_enum" AS ENUM ('docker', 'registry', 'file', 'dir', 'oci-archive');
+      EXCEPTION WHEN duplicate_object THEN null;
+      END $$;
     `);
     await queryRunner.query(`
-      CREATE TYPE "public"."sbom_scan_jobs_format_enum" AS ENUM ('syft-json', 'spdx-json', 'cyclonedx-json', 'table', 'text')
+      DO $$ BEGIN
+        CREATE TYPE "public"."sbom_scan_jobs_format_enum" AS ENUM ('syft-json', 'spdx-json', 'cyclonedx-json', 'table', 'text');
+      EXCEPTION WHEN duplicate_object THEN null;
+      END $$;
     `);
     await queryRunner.query(`
       CREATE TABLE "sbom_scan_jobs" (
