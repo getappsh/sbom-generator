@@ -22,11 +22,14 @@ ENV NODE_ENV=production
 # Syft base image. The curl+sh installer is the official distribution method.
 # pinning with SYFT_INSTALL_VERSION ensures reproducible builds.
 ARG SYFT_INSTALL_VERSION=v1.18.1
+ARG GRYPE_INSTALL_VERSION=v0.87.0
 RUN apk --no-cache add curl bash && \
     curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
       | sh -s -- -b /usr/local/bin "${SYFT_INSTALL_VERSION}" && \
+    curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+      | sh -s -- -b /usr/local/bin "${GRYPE_INSTALL_VERSION}" && \
     apk del curl bash && \
-    syft version
+    syft version && grype version
 
 COPY package*.json ./
 RUN npm install --only=production --omit=dev
