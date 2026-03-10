@@ -50,6 +50,16 @@ export class ScanController {
   }
 
   /**
+   * Request-response: delete a scan by ID.
+   * If the scan is still queued (not yet started), it is cancelled.
+   */
+  @MessagePattern(SbomTopics.DELETE_SCAN)
+  async deleteScan(@RpcPayload('scanId') scanId: string): Promise<{ message: string }> {
+    this.logger.log(`Delete scan: ${scanId}`);
+    return this.scanService.deleteScan(scanId);
+  }
+
+  /**
    * Fire-and-forget: triggered by upload service when a file is uploaded to MinIO.
    * Starts SBOM scan for the uploaded artifact.
    */

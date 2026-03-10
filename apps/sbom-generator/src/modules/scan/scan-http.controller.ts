@@ -1,10 +1,9 @@
 import {
-  Controller, Get, Post, Body, Param, Logger,
+  Controller, Get, Post, Delete, Body, Param, Logger,
   NotFoundException, Res, Sse, MessageEvent,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiOkResponse, ApiCreatedResponse, ApiBody } from '@nestjs/swagger';
-import { Observable, fromEvent } from 'rxjs';
-import { map, take } from 'rxjs/operators';
+import { Observable } from 'rxjs';
 import { Response } from 'express';
 import { ScanService } from './scan.service';
 import { CreateScanDto } from './dto/create-scan.dto';
@@ -78,6 +77,18 @@ export class ScanHttpController {
     try {
       const url = await this.scanService.getReportDownloadUrl(id);
       res.redirect(302, url);
+    } catch (err) {
+      throw new NotFoundException(err.message);
+    }
+  }
+
+  @Delete('scans/:id')
+  @ApiOperation({ summary: 'Delete a scan by ID. Cancels it if still queued.' })
+  @ApiParam({ name: 'id', description: 'Scan job UUID' })
+  @ApiOkResponse({ description: 'Scan deleted/cancelled' })
+  async deleteScan(@Param('id') id: string): Promise<{ message: string }> {
+    try {
+      return await this.scanService.deleteScan(id);
     } catch (err) {
       throw new NotFoundException(err.message);
     }

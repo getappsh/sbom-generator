@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { RpcException } from '@nestjs/microservices';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -106,6 +107,33 @@ export class ScanService implements OnModuleDestroy {
       throw new Error(`Scan ${scanId} is not complete yet (status: ${entity.status})`);
     }
     return this.minioClient.generatePresignedDownloadUrl(this.bucketName, entity.minioKey);
+  }
+
+  async deleteScan(scanId: string): Promise<{ message: string }> {
+    const entity = await this.findOrFail(scanId);
+    const wasCancelled = entity.status === ScanStatus.QUEUED;
+
+    // Clean up MinIO report if it exists
+    if (entity.minioKey) {
+      try {
+        await this.minioClient.deleteObjects(this.bucketName, entity.minioKey);
+      } catch (err) {
+        this.logger.warn(`Failed to delete MinIO report for scan ${scanId}: ${err.message}`);
+      }
+    }
+
+    // Notify any SSE subscribers before removing
+    const subject = this.subjects.get(scanId);
+    if (subject) {
+      subject.complete();
+      this.subjects.delete(scanId);
+    }
+
+    await this.scanRepo.delete({ id: scanId });
+
+    const message = wasCancelled ? 'Scan cancelled' : 'Scan deleted';
+    this.logger.log(`${message}: ${scanId}`);
+    return { message };
   }
 
   /** Subscribe to SSE events for a specific scan. Client gets one event then stream closes. */
@@ -241,7 +269,7 @@ export class ScanService implements OnModuleDestroy {
   private async findOrFail(scanId: string): Promise<SbomScanJobEntity> {
     const entity = await this.scanRepo.findOneBy({ id: scanId });
     if (!entity) {
-      throw new Error(`Scan job not found: ${scanId}`);
+      throw new RpcException({ statusCode: 404, message: `Scan job not found: ${scanId}` });
     }
     return entity;
   }
