@@ -22,13 +22,15 @@ export class SyftEngine implements ISbomEngine {
   async generateReport(options: SbomScanOptions): Promise<SbomScanResult> {
     const format = options.format ?? SbomFormat.CYCLONEDX_JSON;
     const syftTarget = this.buildSyftTarget(options.targetType, options.target);
-    this.logger.log(`[${options.scanId}] Starting Syft scan: target=${syftTarget}, format=${format}`);
+
+    this.logger.log(`[${options.scanId}] Starting Syft scan — target=${syftTarget}, format=${format}, mode=${this.useDocker ? 'docker' : 'binary'}`);
+    const syftStart = Date.now();
 
     const raw = await (this.useDocker
       ? this.runWithDocker(syftTarget, format, options.scanId)
       : this.runBinary(syftTarget, format, options.scanId));
 
-    this.logger.log(`[${options.scanId}] Syft scan completed, output size=${raw.length}`);
+    this.logger.log(`[${options.scanId}] Syft scan completed in ${Date.now() - syftStart}ms, output size=${raw.length} bytes`);
 
     // Enrich CycloneDX output with Grype vulnerability data
     if (this.enableVulnScan && format === SbomFormat.CYCLONEDX_JSON) {
@@ -43,11 +45,14 @@ export class SyftEngine implements ISbomEngine {
    * into the Syft-generated CycloneDX JSON.
    */
   private async enrichWithVulnerabilities(sbomRaw: Buffer, target: string, scanId: string): Promise<Buffer> {
-    this.logger.log(`[${scanId}] Running Grype vulnerability scan`);
+    this.logger.log(`[${scanId}] Starting Grype vulnerability scan — target=${target}, mode=${this.useDocker ? 'docker' : 'binary'}`);
+    const grypeStart = Date.now();
     try {
       const grypeRaw = await (this.useDocker
         ? this.runGrypeWithDocker(target, scanId)
         : this.runGrypeBinary(target, scanId));
+
+      this.logger.log(`[${scanId}] Grype scan completed in ${Date.now() - grypeStart}ms`);
 
       const sbom = JSON.parse(sbomRaw.toString('utf8'));
       const grypeResult = JSON.parse(grypeRaw.toString('utf8'));
@@ -62,7 +67,7 @@ export class SyftEngine implements ISbomEngine {
       return Buffer.from(JSON.stringify(sbom, null, 2), 'utf8');
     } catch (err) {
       // Vulnerability scan failure must not block the SBOM from being saved
-      this.logger.warn(`[${scanId}] Grype scan failed — returning SBOM without vulnerability data: ${(err as Error).message}`);
+      this.logger.warn(`[${scanId}] Grype scan failed after ${Date.now() - grypeStart}ms — returning SBOM without vulnerability data: ${(err as Error).message}`);
       return sbomRaw;
     }
   }
@@ -84,125 +89,89 @@ export class SyftEngine implements ISbomEngine {
     }
   }
 
-  private runBinary(target: string, format: SbomFormat, scanId: string): Promise<Buffer> {
+  /**
+   * Spawns a process, streams stderr line-by-line to the logger in real-time,
+   * collects stdout into a Buffer, and rejects with a rich error on non-zero exit.
+   */
+  private spawnAndCapture(
+    cmd: string,
+    args: string[],
+    label: string,
+    scanId: string,
+  ): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      const args = [target, '-o', format, '--quiet'];
-      this.logger.debug(`[${scanId}] Running: syft ${args.join(' ')}`);
+      this.logger.log(`[${scanId}] [${label}] Spawning: ${cmd} ${args.join(' ')}`);
 
-      const proc = spawn('syft', args);
-      const chunks: Buffer[] = [];
-      const errChunks: Buffer[] = [];
+      const proc = spawn(cmd, args);
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
 
-      proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-      proc.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk));
+      proc.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
 
-      proc.on('close', (code) => {
+      // Log stderr chunks in real-time as they arrive
+      proc.stderr.on('data', (chunk: Buffer) => {
+        stderrChunks.push(chunk);
+        this.logger.debug(`[${scanId}] [${label}] stderr: ${chunk.toString('utf8').trimEnd()}`);
+      });
+
+      proc.on('close', (code, signal) => {
+        this.logger.log(`[${scanId}] [${label}] Process exited — code=${code}, signal=${signal ?? 'none'}`);
+
         if (code !== 0) {
-          const errMsg = Buffer.concat(errChunks).toString();
-          this.logger.error(`[${scanId}] syft exited with code ${code}: ${errMsg}`);
-          return reject(new Error(`Syft exited with code ${code}: ${errMsg}`));
+          const stderrSummary = Buffer.concat(stderrChunks).toString('utf8').trim() || '(no stderr output)';
+          const stdoutPreview = Buffer.concat(stdoutChunks).toString('utf8').slice(0, 500).trim() || '(no stdout output)';
+          const msg =
+            `[${label}] exited with code ${code}` +
+            `\n--- stderr ---\n${stderrSummary}` +
+            `\n--- stdout (first 500 chars) ---\n${stdoutPreview}`;
+          this.logger.error(`[${scanId}] ${msg}`);
+          return reject(new Error(msg));
         }
-        resolve(Buffer.concat(chunks));
+
+        resolve(Buffer.concat(stdoutChunks));
       });
 
       proc.on('error', (err) => {
-        this.logger.error(`[${scanId}] Failed to spawn syft: ${err.message}`);
-        reject(new Error(`Failed to spawn syft binary: ${err.message}`));
+        const msg = `[${label}] failed to spawn '${cmd}': ${err.message}`;
+        this.logger.error(`[${scanId}] ${msg}`);
+        reject(new Error(msg));
       });
     });
+  }
+
+  private runBinary(target: string, format: SbomFormat, scanId: string): Promise<Buffer> {
+    return this.spawnAndCapture('syft', [target, '-o', format, '--quiet'], 'syft', scanId);
   }
 
   private runWithDocker(target: string, format: SbomFormat, scanId: string): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const tmpDir = os.tmpdir();
-      const args = [
-        'run', '--rm',
-        '-v', '/var/run/docker.sock:/var/run/docker.sock',
-        '-v', `${tmpDir}:${tmpDir}:ro`,
-        `anchore/syft:${this.syftVersion}`,
-        target,
-        '-o', format,
-        '--quiet',
-      ];
-      this.logger.debug(`[${scanId}] Running: docker ${args.join(' ')}`);
-
-      const proc = spawn('docker', args);
-      const chunks: Buffer[] = [];
-      const errChunks: Buffer[] = [];
-
-      proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-      proc.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk));
-
-      proc.on('close', (code) => {
-        if (code !== 0) {
-          const errMsg = Buffer.concat(errChunks).toString();
-          this.logger.error(`[${scanId}] docker/syft exited with code ${code}: ${errMsg}`);
-          return reject(new Error(`Syft (docker) exited with code ${code}: ${errMsg}`));
-        }
-        resolve(Buffer.concat(chunks));
-      });
-
-      proc.on('error', (err) => {
-        this.logger.error(`[${scanId}] Failed to spawn docker: ${err.message}`);
-        reject(new Error(`Failed to spawn docker for syft: ${err.message}`));
-      });
-    });
+    const tmpDir = os.tmpdir();
+    const args = [
+      'run', '--rm',
+      '-v', '/var/run/docker.sock:/var/run/docker.sock',
+      '-v', `${tmpDir}:${tmpDir}:ro`,
+      `anchore/syft:${this.syftVersion}`,
+      target,
+      '-o', format,
+      '--quiet',
+    ];
+    return this.spawnAndCapture('docker', args, `syft@${this.syftVersion}`, scanId);
   }
 
   private runGrypeBinary(target: string, scanId: string): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const args = [target, '-o', 'cyclonedx-json', '--quiet'];
-      this.logger.debug(`[${scanId}] Running: grype ${args.join(' ')}`);
-
-      const proc = spawn('grype', args);
-      const chunks: Buffer[] = [];
-      const errChunks: Buffer[] = [];
-
-      proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-      proc.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk));
-
-      proc.on('close', (code) => {
-        if (code !== 0) {
-          const errMsg = Buffer.concat(errChunks).toString();
-          return reject(new Error(`Grype exited with code ${code}: ${errMsg}`));
-        }
-        resolve(Buffer.concat(chunks));
-      });
-
-      proc.on('error', (err) => reject(new Error(`Failed to spawn grype binary: ${err.message}`)));
-    });
+    return this.spawnAndCapture('grype', [target, '-o', 'cyclonedx-json', '--quiet'], 'grype', scanId);
   }
 
   private runGrypeWithDocker(target: string, scanId: string): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const tmpDir = os.tmpdir();
-      const args = [
-        'run', '--rm',
-        '-v', '/var/run/docker.sock:/var/run/docker.sock',
-        '-v', `${tmpDir}:${tmpDir}:ro`,
-        `anchore/grype:${this.grypeVersion}`,
-        target,
-        '-o', 'cyclonedx-json',
-        '--quiet',
-      ];
-      this.logger.debug(`[${scanId}] Running: docker ${args.join(' ')}`);
-
-      const proc = spawn('docker', args);
-      const chunks: Buffer[] = [];
-      const errChunks: Buffer[] = [];
-
-      proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-      proc.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk));
-
-      proc.on('close', (code) => {
-        if (code !== 0) {
-          const errMsg = Buffer.concat(errChunks).toString();
-          return reject(new Error(`Grype (docker) exited with code ${code}: ${errMsg}`));
-        }
-        resolve(Buffer.concat(chunks));
-      });
-
-      proc.on('error', (err) => reject(new Error(`Failed to spawn docker for grype: ${err.message}`)));
-    });
+    const tmpDir = os.tmpdir();
+    const args = [
+      'run', '--rm',
+      '-v', '/var/run/docker.sock:/var/run/docker.sock',
+      '-v', `${tmpDir}:${tmpDir}:ro`,
+      `anchore/grype:${this.grypeVersion}`,
+      target,
+      '-o', 'cyclonedx-json',
+      '--quiet',
+    ];
+    return this.spawnAndCapture('docker', args, `grype@${this.grypeVersion}`, scanId);
   }
 }
