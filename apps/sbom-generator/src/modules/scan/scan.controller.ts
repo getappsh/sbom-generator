@@ -60,6 +60,18 @@ export class ScanController {
   }
 
   /**
+   * Request-response: retry an existing scan by ID.
+   * Resets the scan record to QUEUED and re-executes it with the same target.
+   * For file-based scans uploaded to MinIO, a fresh presigned URL is generated
+   * from the stored source object key to avoid using an expired URL.
+   */
+  @MessagePattern(SbomTopics.RETRY_SCAN)
+  async retryScan(@RpcPayload('scanId') scanId: string): Promise<ScanQueuedDto> {
+    this.logger.log(`Retry scan: ${scanId}`);
+    return this.scanService.retryScan(scanId);
+  }
+
+  /**
    * Fire-and-forget: triggered by upload service when a file is uploaded to MinIO.
    * Starts SBOM scan for the uploaded artifact.
    */

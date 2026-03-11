@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Delete, Body, Param, Logger,
-  NotFoundException, Res, Sse, MessageEvent,
+  NotFoundException, ConflictException, Res, Sse, MessageEvent,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiOkResponse, ApiCreatedResponse, ApiBody } from '@nestjs/swagger';
 import { Observable } from 'rxjs';
@@ -91,6 +91,27 @@ export class ScanHttpController {
       return await this.scanService.deleteScan(id);
     } catch (err) {
       throw new NotFoundException(err.message);
+    }
+  }
+
+  @Post('scans/:id/retry')
+  @ApiOperation({
+    summary: 'Retry a failed or completed scan',
+    description:
+      'Resets the existing scan record to QUEUED and re-runs it under the same ID. ' +
+      'For file-based scans that originated from a MinIO upload, a fresh presigned URL ' +
+      'is automatically generated from the stored source object key.',
+  })
+  @ApiParam({ name: 'id', description: 'Scan job UUID' })
+  @ApiCreatedResponse({ type: ScanQueuedDto })
+  async retryScan(@Param('id') id: string): Promise<ScanQueuedDto> {
+    try {
+      return await this.scanService.retryScan(id);
+    } catch (err) {
+      const status = err?.error?.statusCode ?? err?.statusCode;
+      if (status === 404) throw new NotFoundException(err.message ?? err?.error?.message);
+      if (status === 409) throw new ConflictException(err.message ?? err?.error?.message);
+      throw err;
     }
   }
 }

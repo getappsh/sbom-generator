@@ -6,6 +6,7 @@ import { ApmModule } from '@app/common/apm/apm.module';
 import { ScanModule } from './modules/scan/scan.module';
 import { SbomScanJobEntity } from './modules/scan/scan.entity';
 import { AddSbomScanJobs1773014400001 } from '@app/common/database/migration/1773014400001-AddSbomScanJobs';
+import { AddIsStoredInBucketToSbomScanJobs1773014400002 } from '@app/common/database/migration/1773014400002-AddIsStoredInBucketToSbomScanJobs';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { AddSbomScanJobs1773014400001 } from '@app/common/database/migration/177
           username: config.get('POSTGRES_USER') ?? 'postgres',
           password: config.get('POSTGRES_PASSWORD'),
           entities: [SbomScanJobEntity],
-          migrations: [AddSbomScanJobs1773014400001],
+          migrations: [AddSbomScanJobs1773014400001, AddIsStoredInBucketToSbomScanJobs1773014400002],
           migrationsRun: config.get('MIGRATION_RUN') !== 'false',
           synchronize: false,
         };

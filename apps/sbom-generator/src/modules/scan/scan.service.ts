@@ -57,6 +57,7 @@ export class ScanService implements OnModuleDestroy {
       targetType: dto.targetType,
       format: dto.format ?? SbomFormat.CYCLONEDX_JSON,
       triggeredBy: dto.triggeredBy,
+      isStoredInBucket: dto.isStoredInBucket ?? false,
       status: ScanStatus.QUEUED,
     });
     const saved = await this.scanRepo.save(entity);
@@ -68,21 +69,43 @@ export class ScanService implements OnModuleDestroy {
     return { scanId: saved.id, status: ScanStatus.QUEUED };
   }
 
-  async queueScanForUploadedFile(event: ScanFileUploadedEventDto): Promise<void> {
-    // If a full URL is provided, use it directly. Otherwise generate a presigned
-    // URL so the engine can download the file from MinIO (objectKey alone is not
-    // a valid local filesystem path).
-    let target = event.objectKey;
-    if (!/^https?:\/\//i.test(target)) {
-      const bucket = event.bucketName ?? this.bucketName;
-      target = await this.minioClient.generatePresignedDownloadUrl(bucket, target);
+  /**
+   * Retry an existing scan by ID: resets the record to QUEUED and re-queues it
+   * under the same UUID. Because file-based scans now store the raw bucket object
+   * key in `target` (not a presigned URL), executeScan will automatically generate
+   * a fresh presigned URL at execution time — no special retry logic needed.
+   */
+  async retryScan(scanId: string): Promise<ScanQueuedDto> {
+    const entity = await this.findOrFail(scanId);
+
+    if (entity.status === ScanStatus.QUEUED || entity.status === ScanStatus.RUNNING) {
+      throw new RpcException({
+        statusCode: 409,
+        message: `Scan ${scanId} is already ${entity.status} — cannot retry`,
+      });
     }
 
+    // Reset scan state — executeScan handles presigned URL generation from target
+    entity.status = ScanStatus.QUEUED;
+    entity.error = null as unknown as string;
+    entity.failureReason = null as unknown as string;
+    entity.completedAt = null as unknown as Date;
+    entity.minioKey = null as unknown as string;
+    await this.scanRepo.save(entity);
+
+    this.logger.log(`Retrying scan ${scanId} (targetType=${entity.targetType}, target=${entity.target})`);
+    this.runWithSemaphore(scanId);
+
+    return { scanId, status: ScanStatus.QUEUED };
+  }
+
+  async queueScanForUploadedFile(event: ScanFileUploadedEventDto): Promise<void> {
     const dto: CreateScanDto = {
-      target,
+      target: event.objectKey,
       targetType: SbomTargetType.FILE,
       format: event.format ?? SbomFormat.CYCLONEDX_JSON,
       triggeredBy: event.triggeredBy ?? 'upload-service',
+      isStoredInBucket: true,
     };
     await this.queueScan(dto);
   }
@@ -186,7 +209,15 @@ export class ScanService implements OnModuleDestroy {
 
     let tmpPath: string | undefined;
     try {
-      if (/^https?:\/\//i.test(entity.target)) {
+      if (entity.isStoredInBucket) {
+        // target is a raw bucket object key — generate a fresh presigned URL at execution time
+        const presignedUrl = await this.minioClient.generatePresignedDownloadUrl(
+          this.bucketName,
+          entity.target,
+        );
+        this.logger.log(`[${scanId}] Generated presigned URL for bucket key: ${entity.target}`);
+        tmpPath = await this.downloadToTemp(presignedUrl, scanId);
+      } else if (/^https?:\/\//i.test(entity.target)) {
         tmpPath = await this.downloadToTemp(entity.target, scanId);
       }
 

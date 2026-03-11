@@ -28,6 +28,9 @@ export class SbomScanJobEntity {
   @Column({ nullable: true })
   minioKey: string;
 
+  @Column({ default: false })
+  isStoredInBucket: boolean;
+
   @Column({ nullable: true, type: 'text' })
   error: string;
 

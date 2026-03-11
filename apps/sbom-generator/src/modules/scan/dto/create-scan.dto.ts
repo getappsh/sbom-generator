@@ -21,6 +21,15 @@ export class CreateScanDto {
   @IsString()
   @IsOptional()
   triggeredBy?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Set to true when `target` is a raw object key inside the configured MinIO bucket ' +
+      '(e.g. upload/release/1/file.msi). sbom-generator will generate a fresh presigned URL ' +
+      'at execution time, so the stored key never expires. Also used by retry logic.',
+  })
+  @IsOptional()
+  isStoredInBucket?: boolean;
 }
 
 export class ScanFileUploadedEventDto {
