@@ -311,4 +311,5 @@ export const SbomTopics = {
 
 export const SbomTopicsEmit = {
     SCAN_FILE: `getapp-sbom-generator.scan.file${region}`,
+    SCAN_COMPLETED: `getapp-sbom-generator.scan.completed${region}`,
 } as const

@@ -4,9 +4,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from '@app/common/logger/logger.module';
 import { ApmModule } from '@app/common/apm/apm.module';
 import { ScanModule } from './modules/scan/scan.module';
-import { SbomScanJobEntity } from './modules/scan/scan.entity';
+import { SbomScanJobEntity } from '@app/common/database/entities';
 import { AddSbomScanJobs1773014400001 } from '@app/common/database/migration/1773014400001-AddSbomScanJobs';
 import { AddIsStoredInBucketToSbomScanJobs1773014400002 } from '@app/common/database/migration/1773014400002-AddIsStoredInBucketToSbomScanJobs';
+import { AddSbomReportPathToReleaseArtifact1773110000000 } from '@app/common/database/migration/1773110000000-AddSbomReportPathToReleaseArtifact';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { AddIsStoredInBucketToSbomScanJobs1773014400002 } from '@app/common/data
           username: config.get('POSTGRES_USER') ?? 'postgres',
           password: config.get('POSTGRES_PASSWORD'),
           entities: [SbomScanJobEntity],
-          migrations: [AddSbomScanJobs1773014400001, AddIsStoredInBucketToSbomScanJobs1773014400002],
+          migrations: [AddSbomScanJobs1773014400001, AddIsStoredInBucketToSbomScanJobs1773014400002, AddSbomReportPathToReleaseArtifact1773110000000],
           migrationsRun: config.get('MIGRATION_RUN') !== 'false',
           synchronize: false,
         };

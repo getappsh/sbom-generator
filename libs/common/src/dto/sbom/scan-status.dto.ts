@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SbomFormat, SbomTargetType } from '../interfaces/sbom-engine.interface';
-import { ScanStatus, SbomScanJobEntity } from '../scan.entity';
+import { SbomFormat, SbomTargetType, ScanStatus, SbomScanJobEntity } from '../../database/entities/sbom-scan-job.entity';
 
 export class ScanStatusDto {
   @ApiProperty()

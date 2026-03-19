@@ -3,8 +3,8 @@ import { EventPattern, MessagePattern } from '@nestjs/microservices';
 import { RpcPayload } from '@app/common/microservice-client';
 import { SbomTopics, SbomTopicsEmit } from '@app/common/microservice-client/topics';
 import { ScanService } from './scan.service';
-import { CreateScanDto, ScanFileUploadedEventDto } from './dto/create-scan.dto';
-import { ScanQueuedDto, ScanStatusDto } from './dto/scan-status.dto';
+import { CreateScanDto, ScanFileUploadedEventDto } from '@app/common/dto/sbom';
+import { ScanQueuedDto, ScanStatusDto } from '@app/common/dto/sbom';
 
 @Controller()
 export class ScanController {

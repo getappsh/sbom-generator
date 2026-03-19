@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -12,9 +12,12 @@ import * as os from 'os';
 import * as path from 'path';
 import { MinioClientService } from '@app/common/AWS/minio-client.service';
 import { SbomScanOptions, SBOM_ENGINE, ISbomEngine, SbomFormat, SbomTargetType } from './interfaces/sbom-engine.interface';
-import { SbomScanJobEntity, ScanStatus } from './scan.entity';
-import { CreateScanDto, ScanFileUploadedEventDto } from './dto/create-scan.dto';
-import { ScanQueuedDto, ScanStatusDto } from './dto/scan-status.dto';
+import { SbomScanJobEntity, ScanStatus } from '@app/common/database/entities';
+import { CreateScanDto, ScanFileUploadedEventDto } from '@app/common/dto/sbom';
+import { ScanQueuedDto, ScanStatusDto } from '@app/common/dto/sbom';
+import { ScanCompletedEventDto } from '@app/common/dto/sbom';
+import { MicroserviceClient, MicroserviceName } from '@app/common/microservice-client';
+import { SbomTopicsEmit } from '@app/common/microservice-client/topics';
 
 export interface ScanCompleteEvent {
   scanId: string;
@@ -23,7 +26,7 @@ export interface ScanCompleteEvent {
 }
 
 @Injectable()
-export class ScanService implements OnModuleDestroy {
+export class ScanService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ScanService.name);
   private readonly bucketName: string;
   private readonly maxConcurrent: number;
@@ -41,10 +44,15 @@ export class ScanService implements OnModuleDestroy {
     @InjectRepository(SbomScanJobEntity) private readonly scanRepo: Repository<SbomScanJobEntity>,
     private readonly minioClient: MinioClientService,
     private readonly configService: ConfigService,
+    @Inject(MicroserviceName.UPLOAD_SERVICE) private readonly uploadClient: MicroserviceClient,
   ) {
     this.bucketName = configService.get('BUCKET_NAME') ?? '';
     this.maxConcurrent = Number(configService.get('SCAN_MAX_CONCURRENT') ?? 3);
     this.maxArtifactSizeBytes = Number(configService.get('SBOM_MAX_ARTIFACT_SIZE_BYTES') ?? 0);
+  }
+
+  async onModuleInit() {
+    await this.uploadClient.connect();
   }
 
   onModuleDestroy() {
@@ -243,6 +251,13 @@ export class ScanService implements OnModuleDestroy {
 
       this.logger.log(`Scan ${scanId} completed. Report saved at ${minioKey}`);
       this.notifySubscribers(scanId, { scanId, status: ScanStatus.COMPLETE });
+
+      const completedEvent: ScanCompletedEventDto = {
+        scanId,
+        reportBucketPath: minioKey,
+        success: true,
+      };
+      this.uploadClient.emit(SbomTopicsEmit.SCAN_COMPLETED, completedEvent);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.error(`Scan ${scanId} failed: ${errorMessage}`);
@@ -254,6 +269,14 @@ export class ScanService implements OnModuleDestroy {
       await this.scanRepo.save(entity);
 
       this.notifySubscribers(scanId, { scanId, status: ScanStatus.FAILED, error: errorMessage });
+
+      const failedEvent: ScanCompletedEventDto = {
+        scanId,
+        reportBucketPath: null,
+        success: false,
+        error: errorMessage,
+      };
+      this.uploadClient.emit(SbomTopicsEmit.SCAN_COMPLETED, failedEvent);
     } finally {
       if (tmpPath) {
         fs.unlink(tmpPath, (err) => {

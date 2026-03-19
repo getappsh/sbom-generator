@@ -1,18 +1,5 @@
-export enum SbomFormat {
-  SYFT_JSON = 'syft-json',
-  SPDX_JSON = 'spdx-json',
-  CYCLONEDX_JSON = 'cyclonedx-json',
-  TABLE = 'table',
-  TEXT = 'text',
-}
-
-export enum SbomTargetType {
-  DOCKER_IMAGE = 'docker',
-  REGISTRY = 'registry',
-  FILE = 'file',
-  DIR = 'dir',
-  OCI_ARCHIVE = 'oci-archive',
-}
+export { SbomFormat, SbomTargetType } from '@app/common/database/entities';
+import { SbomFormat, SbomTargetType } from '@app/common/database/entities';
 
 export interface SbomScanOptions {
   scanId: string;

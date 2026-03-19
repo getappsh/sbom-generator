@@ -6,8 +6,8 @@ import { ApiTags, ApiOperation, ApiParam, ApiOkResponse, ApiCreatedResponse, Api
 import { Observable } from 'rxjs';
 import { Response } from 'express';
 import { ScanService } from './scan.service';
-import { CreateScanDto } from './dto/create-scan.dto';
-import { ScanQueuedDto, ScanStatusDto } from './dto/scan-status.dto';
+import { CreateScanDto } from '@app/common/dto/sbom';
+import { ScanQueuedDto, ScanStatusDto } from '@app/common/dto/sbom';
 
 @ApiTags('SBOM')
 @Controller('sbom')

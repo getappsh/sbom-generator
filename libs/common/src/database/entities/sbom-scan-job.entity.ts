@@ -1,11 +1,26 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { SbomFormat, SbomTargetType } from './interfaces/sbom-engine.interface';
 
 export enum ScanStatus {
   QUEUED = 'queued',
   RUNNING = 'running',
   COMPLETE = 'complete',
   FAILED = 'failed',
+}
+
+export enum SbomFormat {
+  SYFT_JSON = 'syft-json',
+  SPDX_JSON = 'spdx-json',
+  CYCLONEDX_JSON = 'cyclonedx-json',
+  TABLE = 'table',
+  TEXT = 'text',
+}
+
+export enum SbomTargetType {
+  DOCKER_IMAGE = 'docker',
+  REGISTRY = 'registry',
+  FILE = 'file',
+  DIR = 'dir',
+  OCI_ARCHIVE = 'oci-archive',
 }
 
 @Entity('sbom_scan_jobs')

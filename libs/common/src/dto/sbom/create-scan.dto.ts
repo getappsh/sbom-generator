@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { SbomFormat, SbomTargetType } from '../interfaces/sbom-engine.interface';
+import { SbomFormat, SbomTargetType } from '../../database/entities/sbom-scan-job.entity';
 
 export class CreateScanDto {
   @ApiProperty({ description: 'Scan target (image name, file path, registry URL, etc.)' })
